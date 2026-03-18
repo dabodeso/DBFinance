@@ -9,14 +9,12 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-# Optional: AgGrid para click en cualquier celda
 try:
     from st_aggrid import AgGrid, GridOptionsBuilder  # type: ignore
     AGGRID_OK = True
 except Exception:
     AGGRID_OK = False
 
-# Import local backend
 HERE = Path(__file__).resolve().parent
 sys.path.append(str(HERE))
 from valoracion_backend import (  # noqa: E402
@@ -29,96 +27,418 @@ from valoracion_backend import (  # noqa: E402
     per_valuation_intrinsic_value,
 )
 
+# ─────────────────────────────────────────────
+#  CSS estilo Apple
+# ─────────────────────────────────────────────
+
+_APPLE_DARK = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Reset & base */
+html, body, .stApp {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                 "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif !important;
+    background: #000000 !important;
+    color: #f5f5f7 !important;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Cuerpo principal */
+section.main > div { background: #000000 !important; }
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: #1c1c1e !important;
+    border-right: 1px solid rgba(255,255,255,0.08) !important;
+}
+section[data-testid="stSidebar"] * { color: #f5f5f7 !important; }
+
+/* Título principal */
+h1 { font-size: 2.2rem !important; font-weight: 700 !important;
+     letter-spacing: -0.03em !important; color: #f5f5f7 !important; }
+h2, h3 { font-weight: 600 !important; letter-spacing: -0.02em !important;
+          color: #f5f5f7 !important; }
+h4, h5 { font-weight: 500 !important; color: #ebebf5 !important; }
+
+/* Tabs */
+div[data-testid="stTabs"] button {
+    font-size: 0.9rem !important;
+    font-weight: 500 !important;
+    color: #98989d !important;
+    border-bottom: 2px solid transparent !important;
+    padding: 8px 16px !important;
+    transition: color 0.2s, border-color 0.2s !important;
+}
+div[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #2997ff !important;
+    border-bottom: 2px solid #2997ff !important;
+}
+
+/* Botones principales y de formulario */
+.stButton > button,
+button[kind="primaryFormSubmit"],
+button[kind="secondaryFormSubmit"],
+div[data-testid="stFormSubmitButton"] > button,
+button[data-testid="baseButton-primaryFormSubmit"],
+button[data-testid="baseButton-secondaryFormSubmit"] {
+    background: #2997ff !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 980px !important;
+    padding: 8px 22px !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+    cursor: pointer !important;
+    transition: background 0.2s !important;
+}
+.stButton > button:hover,
+div[data-testid="stFormSubmitButton"] > button:hover,
+button[data-testid="baseButton-primaryFormSubmit"]:hover {
+    background: #0077ed !important;
+}
+/* Texto interior del botón (span/p que Streamlit mete dentro) */
+div[data-testid="stFormSubmitButton"] > button *,
+.stButton > button * {
+    color: #ffffff !important;
+}
+
+/* Botones stepper (+/−) de number_input — modo oscuro */
+div[data-testid="stNumberInput"] button,
+.stNumberInput button {
+    background: rgba(255,255,255,0.08) !important;
+    color: #f5f5f7 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 6px !important;
+}
+
+/* Inputs */
+input[type="text"], .stTextInput input {
+    background: #1c1c1e !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 10px !important;
+    color: #f5f5f7 !important;
+    padding: 8px 14px !important;
+    font-size: 0.95rem !important;
+    transition: border-color 0.2s !important;
+}
+input[type="text"]:focus, .stTextInput input:focus {
+    border-color: #2997ff !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(41,151,255,0.20) !important;
+}
+
+/* Number inputs */
+input[type="number"] {
+    background: #1c1c1e !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 10px !important;
+    color: #f5f5f7 !important;
+    padding: 6px 12px !important;
+}
+input[type="number"]:focus {
+    border-color: #2997ff !important;
+    box-shadow: 0 0 0 3px rgba(41,151,255,0.20) !important;
+}
+
+/* Labels */
+label, .stTextInput label, .stNumberInput label {
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    color: #98989d !important;
+    letter-spacing: 0.02em !important;
+    text-transform: uppercase !important;
+}
+
+/* Divider */
+hr { border-color: rgba(255,255,255,0.08) !important; }
+
+/* Info / warning / error */
+div[data-testid="stAlertContainer"] {
+    border-radius: 12px !important;
+    border: none !important;
+}
+
+/* Plotly charts */
+div[data-testid="stPlotlyChart"] {
+    background: #1c1c1e !important;
+    border-radius: 16px !important;
+    padding: 8px !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+}
+
+/* Formularios / containers */
+div[data-testid="stForm"] {
+    background: #1c1c1e !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 16px !important;
+    padding: 16px 20px !important;
+}
+
+/* Contenedor AgGrid: card con borde sutil */
+div[class*="stAgGrid"], div[data-testid="stAgGridComponent"] {
+    border-radius: 14px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.35) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 999px; }
+</style>
+"""
+
+_APPLE_LIGHT = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+html, body, .stApp {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                 "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif !important;
+    background: #f5f5f7 !important;
+    color: #1d1d1f !important;
+    -webkit-font-smoothing: antialiased;
+}
+
+section.main > div { background: #f5f5f7 !important; }
+
+section[data-testid="stSidebar"] {
+    background: #ffffff !important;
+    border-right: 1px solid rgba(0,0,0,0.08) !important;
+}
+section[data-testid="stSidebar"] * { color: #1d1d1f !important; }
+
+h1 { font-size: 2.2rem !important; font-weight: 700 !important;
+     letter-spacing: -0.03em !important; color: #1d1d1f !important; }
+h2, h3 { font-weight: 600 !important; letter-spacing: -0.02em !important;
+          color: #1d1d1f !important; }
+h4, h5 { font-weight: 500 !important; color: #3a3a3c !important; }
+
+div[data-testid="stTabs"] button {
+    font-size: 0.9rem !important; font-weight: 500 !important;
+    color: #6e6e73 !important;
+    border-bottom: 2px solid transparent !important;
+    padding: 8px 16px !important;
+    transition: color 0.2s, border-color 0.2s !important;
+}
+div[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #0071e3 !important;
+    border-bottom: 2px solid #0071e3 !important;
+}
+
+.stButton > button,
+button[kind="primaryFormSubmit"],
+button[kind="secondaryFormSubmit"],
+div[data-testid="stFormSubmitButton"] > button,
+button[data-testid="baseButton-primaryFormSubmit"],
+button[data-testid="baseButton-secondaryFormSubmit"] {
+    background: #0071e3 !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 980px !important;
+    padding: 8px 22px !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+    cursor: pointer !important;
+    transition: background 0.2s !important;
+}
+.stButton > button:hover,
+div[data-testid="stFormSubmitButton"] > button:hover,
+button[data-testid="baseButton-primaryFormSubmit"]:hover {
+    background: #005bbf !important;
+}
+/* Texto interior del botón */
+div[data-testid="stFormSubmitButton"] > button *,
+.stButton > button * {
+    color: #ffffff !important;
+}
+
+/* Botones stepper (+/−) de number_input — modo claro */
+div[data-testid="stNumberInput"] button,
+.stNumberInput button {
+    background: #f5f5f7 !important;
+    color: #6e6e73 !important;
+    border: 1px solid rgba(0,0,0,0.12) !important;
+    border-radius: 6px !important;
+}
+div[data-testid="stNumberInput"] button:hover,
+.stNumberInput button:hover {
+    background: #e8e8ed !important;
+    color: #1d1d1f !important;
+}
+
+input[type="text"], .stTextInput input {
+    background: #ffffff !important;
+    border: 1px solid rgba(0,0,0,0.15) !important;
+    border-radius: 10px !important;
+    color: #1d1d1f !important;
+    padding: 8px 14px !important;
+    font-size: 0.95rem !important;
+    transition: border-color 0.2s !important;
+}
+input[type="text"]:focus, .stTextInput input:focus {
+    border-color: #0071e3 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(0,113,227,0.18) !important;
+}
+
+input[type="number"] {
+    background: #ffffff !important;
+    border: 1px solid rgba(0,0,0,0.15) !important;
+    border-radius: 10px !important;
+    color: #1d1d1f !important;
+    padding: 6px 12px !important;
+}
+input[type="number"]:focus {
+    border-color: #0071e3 !important;
+    box-shadow: 0 0 0 3px rgba(0,113,227,0.18) !important;
+}
+
+label, .stTextInput label, .stNumberInput label {
+    font-size: 0.82rem !important; font-weight: 500 !important;
+    color: #6e6e73 !important; letter-spacing: 0.02em !important;
+    text-transform: uppercase !important;
+}
+
+hr { border-color: rgba(0,0,0,0.08) !important; }
+
+div[data-testid="stAlertContainer"] {
+    border-radius: 12px !important; border: none !important;
+}
+
+div[data-testid="stPlotlyChart"] {
+    background: #ffffff !important;
+    border-radius: 16px !important;
+    padding: 8px !important;
+    border: 1px solid rgba(0,0,0,0.06) !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+}
+
+div[data-testid="stForm"] {
+    background: #ffffff !important;
+    border: 1px solid rgba(0,0,0,0.08) !important;
+    border-radius: 16px !important;
+    padding: 16px 20px !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05) !important;
+}
+
+/* Contenedor AgGrid: card con sombra suave */
+div[class*="stAgGrid"], div[data-testid="stAgGridComponent"] {
+    border-radius: 14px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(0,0,0,0.06) !important;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.07) !important;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); border-radius: 999px; }
+</style>
+"""
+
+
+# ─────────────────────────────────────────────
+#  Helpers
+# ─────────────────────────────────────────────
 
 def _calc_yoy(vals: List[float], mas_reciente_primero: bool = True) -> List[Optional[float]]:
-    # Si el orden es "más reciente primero" (típico en yfinance), el YoY del índice i
-    # se compara con i+1.
     out: List[Optional[float]] = [None] * len(vals)
     n = len(vals)
     if n <= 1:
         return out
-
     if mas_reciente_primero:
         for i in range(n - 1):
             prev = vals[i + 1]
-            if prev is None or prev == 0:
-                out[i] = None
-            else:
-                out[i] = (vals[i] / prev - 1.0) * 100.0
+            out[i] = None if (prev is None or prev == 0) else (vals[i] / prev - 1.0) * 100.0
     else:
         for i in range(1, n):
             prev = vals[i - 1]
-            if prev is None or prev == 0:
-                out[i] = None
-            else:
-                out[i] = (vals[i] / prev - 1.0) * 100.0
+            out[i] = None if (prev is None or prev == 0) else (vals[i] / prev - 1.0) * 100.0
     return out
+
+
+def _chart_theme(dark: bool) -> dict:
+    """Devuelve los colores base para gráficos según el tema."""
+    if dark:
+        return dict(
+            paper_bg="#1c1c1e", plot_bg="#1c1c1e",
+            font_col="#f5f5f7", axis_col="#ebebf5",
+            tick_col="#98989d", grid_col="rgba(255,255,255,0.07)",
+            line_col="rgba(255,255,255,0.15)",
+        )
+    return dict(
+        paper_bg="#ffffff", plot_bg="#ffffff",
+        font_col="#1d1d1f", axis_col="#1d1d1f",
+        tick_col="#3a3a3c", grid_col="rgba(0,0,0,0.07)",
+        line_col="rgba(0,0,0,0.15)",
+    )
+
+
+def _apply_axis_style(fig: go.Figure, t: dict, secondary: bool = False) -> None:
+    """Aplica colores de ejes a todos los ejes del gráfico."""
+    axis_style = dict(
+        title_font=dict(color=t["axis_col"]),
+        tickfont=dict(color=t["tick_col"]),
+        gridcolor=t["grid_col"],
+        linecolor=t["line_col"],
+        zerolinecolor=t["line_col"],
+    )
+    fig.update_xaxes(**axis_style)
+    fig.update_yaxes(**axis_style)
 
 
 def _plot_grouped_bars(df_numeric: pd.DataFrame, metrics: List[str], title: str) -> go.Figure:
     years = list(df_numeric.columns)
-    mas_reciente_primero = True
-    # Filtrar métricas inexistentes (por ejemplo, al cambiar de ticker)
     metrics = [m for m in metrics if m in df_numeric.index][:2]
+
+    dark = st.session_state.get("theme", "dark") == "dark"
+    t = _chart_theme(dark)
+    accent = ["#2997ff", "#ff9f0a"] if dark else ["#0071e3", "#ff9500"]
 
     def to_float_list(metric: str) -> List[float]:
         vals = []
         for y in years:
             v = df_numeric.loc[metric, y]
             try:
-                if pd.isna(v):
-                    vals.append(0.0)
-                else:
-                    vals.append(float(v))
+                vals.append(0.0 if pd.isna(v) else float(v))
             except Exception:
                 vals.append(0.0)
         return vals
 
     fig = go.Figure()
-
-    colors = ["#1f77b4", "#ff7f0e"]
-    for idx, metric in enumerate(metrics[:2]):
+    for idx, metric in enumerate(metrics):
         vals = to_float_list(metric)
-        yoy_vals = _calc_yoy(vals, mas_reciente_primero=mas_reciente_primero)
+        yoy_vals = _calc_yoy(vals)
+        yoy_txt = ["YoY: N/A" if yv is None else f"YoY: {yv:+.1f}%" for yv in yoy_vals]
+        fig.add_trace(go.Bar(
+            name=metric, x=years, y=vals,
+            marker_color=accent[idx % len(accent)],
+            marker_line_width=0,
+            customdata=yoy_txt,
+            hovertemplate="<b>%{x}</b><br>" + f"{metric}: " + "%{y:.2f}<br>%{customdata[0]}<extra></extra>",
+        ))
 
-        yoy_txt: List[str] = []
-        for i, yv in enumerate(yoy_vals):
-            if yv is None:
-                yoy_txt.append("YoY: N/A")
-            else:
-                yoy_txt.append(f"YoY: {yv:+.1f}%")
-
-        fig.add_trace(
-            go.Bar(
-                name=metric,
-                x=years,
-                y=vals,
-                marker_color=colors[idx % len(colors)],
-                customdata=yoy_txt,
-                hovertemplate="<b>%{x}</b><br>"
-                f"{metric}: " + "%{y:.2f}<br>"
-                "%{customdata[0]}<extra></extra>",
-            )
-        )
-
-    template = "plotly_dark" if st.session_state.get("theme", "dark") == "dark" else "plotly_white"
     fig.update_layout(
-        title=title,
+        title=dict(text=title, font=dict(size=15, color=t["font_col"], family="Inter, -apple-system")),
         barmode="group" if len(metrics) == 2 else "relative",
-        template=template,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        paper_bgcolor=t["paper_bg"], plot_bgcolor=t["plot_bg"],
+        font=dict(color=t["font_col"], family="Inter, -apple-system"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    bgcolor="rgba(0,0,0,0)", font=dict(size=12, color=t["font_col"])),
         margin=dict(l=40, r=20, t=60, b=40),
-        xaxis_title="Año",
-        yaxis_title="Valor",
+        xaxis=dict(title="Año"),
+        yaxis=dict(title="Valor"),
+        bargap=0.25, bargroupgap=0.08,
     )
+    _apply_axis_style(fig, t)
     return fig
 
 
 def _dividend_growth_chart(df_income: pd.DataFrame) -> Optional[go.Figure]:
-    """
-    Barras: dividendo anual (últimos 4 años disponibles).
-    Línea: crecimiento YoY (%) en verde si sube, rojo si baja.
-    """
     if df_income is None or df_income.empty or "Dividendo Anual" not in df_income.index:
         return None
     try:
@@ -135,58 +455,63 @@ def _dividend_growth_chart(df_income: pd.DataFrame) -> Optional[go.Figure]:
             prev = vals[i + 1]
             yoy[i] = None if prev == 0 else (vals[i] / prev - 1) * 100
 
-        colors = []
-        for v in yoy:
-            if v is None:
-                colors.append("rgba(0,0,0,0)")
-            elif v >= 0:
-                colors.append("#22c55e")  # verde
-            else:
-                colors.append("#ef4444")  # rojo
+        dark = st.session_state.get("theme", "dark") == "dark"
+        t = _chart_theme(dark)
+        bar_col = "#2997ff" if dark else "#0071e3"
+
+        pt_colors = [
+            "rgba(0,0,0,0)" if v is None else ("#34c759" if v >= 0 else "#ff3b30")
+            for v in yoy
+        ]
 
         fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(
-            go.Bar(name="Dividendo anual", x=years, y=vals, marker_color="#1f77b4"),
-            secondary_y=False,
-        )
-        fig.add_trace(
-            go.Scatter(
-                name="Crecimiento YoY (%)",
-                x=years,
-                y=[v if v is not None else None for v in yoy],
-                mode="lines+markers+text",
-                line=dict(color="#94a3b8", width=2),
-                marker=dict(color=colors, size=10),
-                text=[("" if v is None else f"{v:+.1f}%") for v in yoy],
-                textposition="top center",
-            ),
-            secondary_y=True,
-        )
-        template = "plotly_dark" if st.session_state.get("theme", "dark") == "dark" else "plotly_white"
+        fig.add_trace(go.Bar(
+            name="Dividendo anual", x=years, y=vals,
+            marker_color=bar_col, marker_line_width=0,
+        ), secondary_y=False)
+        fig.add_trace(go.Scatter(
+            name="Crecimiento YoY (%)", x=years,
+            y=[v if v is not None else None for v in yoy],
+            mode="lines+markers+text",
+            line=dict(color=t["tick_col"], width=2),
+            marker=dict(color=pt_colors, size=10),
+            text=[("" if v is None else f"{v:+.1f}%") for v in yoy],
+            textposition="top center",
+            textfont=dict(color=pt_colors, size=12, family="Inter, -apple-system"),
+        ), secondary_y=True)
+
         fig.update_layout(
-            title="Dividendos (últimos 4 años) y crecimiento YoY",
-            template=template,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            title=dict(text="Dividendos (últimos 4 años) y crecimiento YoY",
+                       font=dict(size=15, color=t["font_col"], family="Inter, -apple-system")),
+            paper_bgcolor=t["paper_bg"], plot_bgcolor=t["plot_bg"],
+            font=dict(color=t["font_col"], family="Inter, -apple-system"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                        bgcolor="rgba(0,0,0,0)", font=dict(color=t["font_col"])),
             margin=dict(l=40, r=20, t=60, b=40),
         )
-        fig.update_xaxes(title_text="Año")
-        fig.update_yaxes(title_text="Dividendo ($)", secondary_y=False)
-        fig.update_yaxes(title_text="Crecimiento (%)", secondary_y=True)
+        axis_style = dict(
+            title_font=dict(color=t["axis_col"]),
+            tickfont=dict(color=t["tick_col"]),
+            gridcolor=t["grid_col"],
+            linecolor=t["line_col"],
+        )
+        fig.update_yaxes(title_text="Dividendo ($)", **axis_style, secondary_y=False)
+        fig.update_yaxes(title_text="Crecimiento (%)", **axis_style, secondary_y=True)
+        fig.update_xaxes(**axis_style)
         return fig
     except Exception:
         return None
 
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
-def load_all_tables(ticker: str):
-    res_income = build_account_income_table(ticker)
-    res_balance = build_balance_table(ticker)
-    res_cf = build_cashflow_table(ticker)
+def load_all_tables(ticker: str, fmp_api_key: str):
+    res_income = build_account_income_table(ticker, api_key=fmp_api_key)
+    res_balance = build_balance_table(ticker, api_key=fmp_api_key)
+    res_cf = build_cashflow_table(ticker, api_key=fmp_api_key)
     return res_income, res_balance, res_cf
 
 
 def _coerce_max_two(selected: List[str]) -> List[str]:
-    # Mantener las dos últimas selecciones (máx 2)
     return selected[-2:]
 
 
@@ -200,44 +525,31 @@ def _toggle_metric(selected: List[str], metric: str) -> List[str]:
 
 def _style_selected_rows(df: pd.DataFrame, selected: List[str]):
     selected_set = set(selected)
+    dark = st.session_state.get("theme", "dark") == "dark"
+    hl = "rgba(41,151,255,0.20)" if dark else "rgba(0,113,227,0.12)"
 
     def highlight_row(row: pd.Series):
         if row.name in selected_set:
-            return ["background-color: rgba(31, 119, 180, 0.25)"] * len(row)
+            return [f"background-color: {hl}; font-weight: 600"] * len(row)
         return [""] * len(row)
 
     return df.style.apply(highlight_row, axis=1)
 
 
-def _clickable_table(
-    df_fmt: pd.DataFrame,
-    selected: List[str],
-    *,
-    state_prefix: str,
-) -> List[str]:
-    """
-    Renderiza tabla sin columnas extra y usa la selección de fila de st.dataframe:
-    - click en cualquier celda de la fila => selecciona esa fila
-    - al detectar una nueva selección => toggle en 'selected'
-    """
-    # Streamlit devuelve el evento de selección; usamos "rerun" para capturar clics.
+def _clickable_table(df_fmt: pd.DataFrame, selected: List[str], *, state_prefix: str) -> List[str]:
     event = st.dataframe(
         _style_selected_rows(df_fmt, selected),
-        width="stretch",
-        height=420,
-        on_select="rerun",
-        selection_mode="single-row",
+        width="stretch", height=420,
+        on_select="rerun", selection_mode="single-row",
         key=f"{state_prefix}_df",
     )
-
-    # Guardamos el último índice clicado para no togglear en cada rerun
     last_key = f"{state_prefix}_last_clicked"
     if last_key not in st.session_state:
         st.session_state[last_key] = None
 
     clicked_metric: Optional[str] = None
     try:
-        rows: List[int] = list(getattr(event, "selection", {}).get("rows", []))  # type: ignore[attr-defined]
+        rows: List[int] = list(getattr(event, "selection", {}).get("rows", []))
         if rows:
             clicked_metric = df_fmt.index[rows[0]]
     except Exception:
@@ -246,7 +558,6 @@ def _clickable_table(
     if clicked_metric is not None and clicked_metric != st.session_state[last_key]:
         st.session_state[last_key] = clicked_metric
         selected = _toggle_metric(selected, str(clicked_metric))
-
     return selected
 
 
@@ -256,466 +567,586 @@ def _aggrid_table_click_any_cell(
     *,
     state_prefix: str,
 ) -> List[str]:
-    """
-    Tabla sin columnas extra donde un click en cualquier celda selecciona la fila.
-    UX deseada:
-    - Click 1: añade esa métrica a la gráfica
-    - Click 2 en otra fila: añade la segunda (máx 2)
-    - Click 3 en otra fila: se mantiene máx 2 (sale la más antigua)
-    - Click en una ya seleccionada: la quita
-    """
     if not AGGRID_OK:
-        return selected
+        return _clickable_table(df_fmt, selected, state_prefix=state_prefix)
 
+    dark = st.session_state.get("theme", "dark") == "dark"
+    accent_color = "#2997ff" if dark else "#0071e3"
+
+    # ── La clave del fix: el estado de selección va en los DATOS,
+    #    no en la lista hardcodeada del JsCode.  AgGrid re-pinta las
+    #    celdas en cada rerun porque los datos cambian, mientras que
+    #    el JsCode compilado con una lista fija queda cacheado.
     df_grid = df_fmt.reset_index().rename(columns={"index": "Métrica"})
+    df_grid["_sel"] = df_grid["Métrica"].isin(selected)
+
+    from st_aggrid import JsCode  # noqa: PLC0415
+
+    metric_cell_style = JsCode(f"""
+function(params) {{
+    if (params.data && params.data._sel === true) {{
+        return {{
+            fontWeight: '700',
+            color: '{accent_color}',
+            borderLeft: '3px solid {accent_color}',
+            paddingLeft: '13px',
+            textAlign: 'left',
+        }};
+    }}
+    return {{
+        fontWeight: '600',
+        textAlign: 'left',
+        paddingLeft: '16px',
+        borderLeft: '3px solid transparent',
+    }};
+}}
+""")
+
     gb = GridOptionsBuilder.from_dataframe(df_grid)
-    # La selección visual del grid será de 1 fila, pero la gráfica puede contener hasta 2 métricas.
-    # Esto permite UX "click, click" sin Ctrl.
     gb.configure_selection("single", use_checkbox=False)
     gb.configure_grid_options(
         suppressRowClickSelection=False,
         rowSelection="single",
-        headerHeight=34,
-        rowHeight=32,
+        headerHeight=38,
+        rowHeight=40,
+        suppressCellFocus=True,
+        enableCellTextSelection=False,
     )
     gb.configure_default_column(
-        resizable=True,
-        sortable=False,
-        filter=False,
-        wrapText=False,
+        resizable=True, sortable=False, filter=False, wrapText=False,
+        cellStyle={"textAlign": "right", "letterSpacing": "0.01em"},
+        headerClass="apple-header",
     )
     gb.configure_column(
-        "Métrica",
-        pinned="left",
-        width=260,
-        cellStyle={"fontWeight": "600"},
+        "Métrica", pinned="left", width=240,
+        cellStyle=metric_cell_style,
+        headerClass="apple-header",
     )
+    # Ocultar la columna auxiliar _sel
+    gb.configure_column("_sel", hide=True)
     grid_opts = gb.build()
 
-    # Estética: zebra stripes + selección visible (modo claro/blanco+azul)
-    if st.session_state.get("theme", "dark") == "light":
-        custom_css = {
-            ".ag-theme-streamlit": {
-                "--ag-background-color": "#ffffff",
-                "--ag-foreground-color": "#0f172a",
-                "--ag-header-background-color": "rgba(31, 106, 165, 0.10)",
-                "--ag-odd-row-background-color": "rgba(15, 23, 42, 0.03)",
-                "--ag-row-hover-color": "rgba(31, 106, 165, 0.10)",
-                "--ag-selected-row-background-color": "rgba(31, 106, 165, 0.16)",
-                "--ag-font-size": "13px",
-            }
-        }
+    if dark:
+        bg        = "#1c1c1e"
+        fg        = "#f5f5f7"
+        header_bg = "#1c1c1e"
+        header_fg = "#98989d"
+        odd_bg    = "rgba(255,255,255,0.025)"
+        hover_bg  = "rgba(41,151,255,0.09)"
+        sel_bg    = "rgba(41,151,255,0.14)"
+        border    = "rgba(255,255,255,0.07)"
+        sep       = "rgba(255,255,255,0.06)"
     else:
-        custom_css = {
-            ".ag-theme-streamlit": {
-                "--ag-header-background-color": "rgba(31, 119, 180, 0.12)",
-                "--ag-odd-row-background-color": "rgba(127, 127, 127, 0.06)",
-                "--ag-row-hover-color": "rgba(31, 119, 180, 0.08)",
-                "--ag-selected-row-background-color": "rgba(31, 119, 180, 0.18)",
-                "--ag-font-size": "13px",
-            }
-        }
+        bg        = "#ffffff"
+        fg        = "#1d1d1f"
+        header_bg = "#ffffff"
+        header_fg = "#6e6e73"
+        odd_bg    = "rgba(0,0,0,0.018)"
+        hover_bg  = "rgba(0,113,227,0.07)"
+        sel_bg    = "rgba(0,113,227,0.10)"
+        border    = "rgba(0,0,0,0.07)"
+        sep       = "rgba(0,0,0,0.06)"
+
+    # Selector base según el tema que AgGrid va a aplicar
+    base = ".ag-theme-streamlit" if dark else ".ag-theme-alpine"
+
+    custom_css = {
+        # ── Variables CSS (funciona bien en dark/streamlit) ──────────────
+        base: {
+            "--ag-background-color": bg,
+            "--ag-foreground-color": fg,
+            "--ag-header-background-color": header_bg,
+            "--ag-header-foreground-color": header_fg,
+            "--ag-odd-row-background-color": odd_bg,
+            "--ag-row-hover-color": hover_bg,
+            "--ag-selected-row-background-color": sel_bg,
+            "--ag-border-color": border,
+            "--ag-row-border-color": sep,
+            "--ag-cell-horizontal-border": "none",
+            "--ag-font-size": "13px",
+            "--ag-font-family": "Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif",
+            "--ag-grid-size": "5px",
+            "--ag-list-item-height": "40px",
+        },
+        # ── Overrides directos (necesario en light/alpine para ganar al tema) ──
+        f"{base} .ag-root-wrapper": {
+            "background-color": f"{bg} !important",
+            "color": f"{fg} !important",
+            "border-radius": "14px !important",
+            "overflow": "hidden !important",
+            "border": f"1px solid {border} !important",
+        },
+        f"{base} .ag-header": {
+            "background-color": f"{header_bg} !important",
+            "border-bottom": f"1px solid {sep} !important",
+        },
+        f"{base} .ag-header-cell-text": {
+            "font-size": "11px !important",
+            "font-weight": "500 !important",
+            "letter-spacing": "0.06em !important",
+            "text-transform": "uppercase !important",
+            "color": f"{header_fg} !important",
+        },
+        f"{base} .ag-header-cell": {
+            "border-right": "none !important",
+            "padding-left": "16px !important",
+        },
+        f"{base} .ag-row": {
+            "background-color": f"{bg} !important",
+            "color": f"{fg} !important",
+            "border-bottom": f"1px solid {sep} !important",
+        },
+        f"{base} .ag-row-odd": {
+            "background-color": f"{odd_bg} !important",
+        },
+        f"{base} .ag-cell": {
+            "border-right": "none !important",
+            "padding-right": "20px !important",
+            "display": "flex !important",
+            "align-items": "center !important",
+            "color": f"{fg} !important",
+        },
+        f"{base} .ag-row-selected": {
+            "background-color": f"{sel_bg} !important",
+        },
+        f"{base} .ag-row-selected .ag-cell": {
+            "background-color": "transparent !important",
+        },
+        f"{base} .ag-row:hover": {
+            "background-color": f"{hover_bg} !important",
+            "cursor": "pointer !important",
+        },
+        f"{base} .ag-pinned-left-cols-container": {
+            "border-right": f"1px solid {sep} !important",
+            "background-color": f"{bg} !important",
+        },
+        f"{base} .ag-pinned-left-header": {
+            "background-color": f"{header_bg} !important",
+        },
+    }
+
+    # En modo claro usamos "alpine" para romper la herencia de la paleta oscura de Streamlit.
+    # En modo oscuro usamos "streamlit" que ya va bien.
+    aggrid_theme = "streamlit" if dark else "alpine"
 
     resp = AgGrid(
-        df_grid,
-        gridOptions=grid_opts,
-        # GridUpdateMode está deprecado en algunas versiones
+        df_grid, gridOptions=grid_opts,
         update_on=["selectionChanged"],
-        allow_unsafe_jscode=False,
+        allow_unsafe_jscode=True,
         fit_columns_on_grid_load=True,
         key=f"{state_prefix}_aggrid",
-        height=420,
-        theme="streamlit",
+        height=440, theme=aggrid_theme,
         custom_css=custom_css,
     )
 
     rows_any: Any = resp.get("selected_rows", None)
-    metric: Optional[str] = None
+    clicked: Optional[str] = None
     try:
-        # Algunas versiones devuelven lista[dict]
         if isinstance(rows_any, list) and len(rows_any) > 0:
-            metric = rows_any[0].get("Métrica")
-        # Otras devuelven DataFrame
+            clicked = rows_any[0].get("Métrica")
         elif isinstance(rows_any, pd.DataFrame) and not rows_any.empty:
             if "Métrica" in rows_any.columns:
-                metric = rows_any.iloc[0].get("Métrica")
+                clicked = rows_any.iloc[0].get("Métrica")
     except Exception:
-        metric = None
+        clicked = None
 
+    if clicked is None:
+        return selected
+
+    clicked = str(clicked)
+
+    # Protección contra re-renders sin nuevo clic real:
+    # AgGrid devuelve siempre la fila seleccionada aunque no se haya clicado de nuevo.
+    # Usamos last_key solo para detectar si es un clic NUEVO (distinto al anterior).
     last_key = f"{state_prefix}_last_clicked"
     if last_key not in st.session_state:
         st.session_state[last_key] = None
 
-    if metric is None:
+    prev = st.session_state[last_key]
+
+    # Es un clic nuevo si cambia la fila seleccionada en AgGrid
+    if clicked == prev:
+        # Misma fila que la última vez → no es un clic nuevo, no hacemos nada
         return selected
 
-    metric = str(metric)
-    # Evitar aplicar el mismo click dos veces por reruns
-    if metric == st.session_state[last_key]:
-        return selected
-    st.session_state[last_key] = metric
+    # Nuevo clic: actualizar last_key y hacer toggle
+    st.session_state[last_key] = clicked
 
-    # Toggle + cola de 2 elementos
-    if metric in selected:
-        selected = [m for m in selected if m != metric]
+    if clicked in selected:
+        selected = [m for m in selected if m != clicked]
     else:
-        selected = selected + [metric]
-        if len(selected) > 2:
-            selected = selected[-2:]
+        selected = (selected + [clicked])[-2:]
     return selected
 
 
+def _colored_value_html(label: str, v: float, price: Optional[float]) -> str:
+    if price is None:
+        return f'<div style="margin-bottom:8px"><span style="font-weight:700">{label}</span><br><span style="font-size:1.5rem;font-weight:800">${v:.2f}</span></div>'
+    barato = price < v
+    color = "#34c759" if barato else "#ff3b30"
+    status = "barato" if barato else "caro"
+    return (
+        f'<div style="margin-bottom:8px">'
+        f'<div style="font-size:0.78rem;font-weight:500;letter-spacing:0.05em;text-transform:uppercase;'
+        f'color:#98989d;margin-bottom:4px">{label}</div>'
+        f'<span style="color:{color};font-size:1.6rem;font-weight:800">${v:.2f}</span>'
+        f'<span style="color:{color};margin-left:10px;font-size:0.9rem">'
+        f'vs ${price:.2f} → {status}</span>'
+        f'</div>'
+    )
+
+
+# ─────────────────────────────────────────────
+#  Main
+# ─────────────────────────────────────────────
+
 def main():
-    st.set_page_config(page_title="Valoración de Acciones (Web)", layout="wide")
-    st.title("Valoración de Acciones (web)")
+    st.set_page_config(page_title="DB Finance", page_icon="📈", layout="wide")
 
-    # Estado de sesión
-    if "last_ticker" not in st.session_state:
-        st.session_state.last_ticker = ""
-    if "data" not in st.session_state:
-        st.session_state.data = None
-    if "sel_income" not in st.session_state:
-        st.session_state.sel_income = []
-    if "sel_balance" not in st.session_state:
-        st.session_state.sel_balance = []
-    if "sel_cf" not in st.session_state:
-        st.session_state.sel_cf = []
-    if "theme" not in st.session_state:
-        st.session_state.theme = "dark"
+    # ── Estado de sesión ────────────────────────
+    defaults = {
+        "last_ticker": "", "data": None,
+        "sel_income": [], "sel_balance": [], "sel_cf": [],
+        "theme": "dark",
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-    # Toggle modo claro/oscuro (principalmente blanco y azul en claro)
+    # ── Sidebar ──────────────────────────────────
     with st.sidebar:
+        st.markdown("### ⚙️ Ajustes")
         modo_claro = st.toggle("Modo claro", value=(st.session_state.theme == "light"))
         st.session_state.theme = "light" if modo_claro else "dark"
 
-    if st.session_state.theme == "light":
+        # API key — robusta: intenta secrets, luego vacío
+        fmp_key = ""
+        try:
+            fmp_key = st.secrets.get("FMP_API_KEY", "")
+        except Exception:
+            pass
+        if not fmp_key:
+            st.error("Falta `FMP_API_KEY` en Secrets.")
+
+        st.markdown("---")
         st.markdown(
-            """
-<style>
-  .stApp { background: #ffffff; color: #0f172a; }
-  h1, h2, h3, h4 { color: #0f172a; }
-  /* acentos azules */
-  a, .st-emotion-cache-10trblm, .st-emotion-cache-1dp5vir { color: #1f6aa5; }
-  /* contenedores */
-  div[data-testid="stVerticalBlockBorderWrapper"] { border-color: rgba(31,106,165,0.25); }
-</style>
-""",
+            "<div style='font-size:0.75rem;color:#6e6e73'>Datos: Financial Modeling Prep</div>",
             unsafe_allow_html=True,
         )
 
-    with st.form("search_form", clear_on_submit=False):
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            ticker = st.text_input("Ticker", value=st.session_state.last_ticker or "AAPL").strip().upper()
-        with col2:
-            buscar = st.form_submit_button("Buscar")
+    # ── Inyectar CSS según tema ──────────────────
+    st.markdown(_APPLE_LIGHT if st.session_state.theme == "light" else _APPLE_DARK,
+                unsafe_allow_html=True)
 
-    if buscar:
+    # ── Header ───────────────────────────────────
+    st.markdown("# DB Finance")
+    st.markdown(
+        "<p style='color:#6e6e73;margin-top:-12px;margin-bottom:24px;font-size:1rem'>"
+        "Análisis fundamental y valoración de acciones</p>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Buscador ─────────────────────────────────
+    with st.form("search_form", clear_on_submit=False):
+        c1, c2, c3 = st.columns([2, 1, 5])
+        with c1:
+            ticker = st.text_input(
+                "Ticker", value=st.session_state.last_ticker or "AAPL",
+                placeholder="AAPL, MSFT, AMZN…",
+            ).strip().upper()
+        with c2:
+            st.markdown("<div style='margin-top:24px'>", unsafe_allow_html=True)
+            buscar = st.form_submit_button("Buscar")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    if buscar and fmp_key:
         try:
-            with st.spinner("Cargando datos (yfinance)..."):
-                res_income, res_balance, res_cf = load_all_tables(ticker)
+            with st.spinner(f"Cargando {ticker}…"):
+                res_income, res_balance, res_cf = load_all_tables(ticker, fmp_key)
             st.session_state.data = (res_income, res_balance, res_cf)
             st.session_state.last_ticker = ticker
-            # Limpiar selecciones (por si el nuevo ticker no tiene esas métricas)
+
             inc_idx = list(res_income["df_numeric"].index)
             bal_idx = list(res_balance["df_numeric"].index)
-            cf_idx = list(res_cf["df_numeric"].index)
+            cf_idx  = list(res_cf["df_numeric"].index)
 
-            st.session_state.sel_income = [m for m in st.session_state.sel_income if m in inc_idx]
-            st.session_state.sel_balance = [m for m in st.session_state.sel_balance if m in bal_idx]
-            st.session_state.sel_cf = [m for m in st.session_state.sel_cf if m in cf_idx]
-
-            # Defaults si están vacíos tras limpiar
-            if not st.session_state.sel_income:
-                st.session_state.sel_income = inc_idx[:2]
-            if not st.session_state.sel_balance:
-                st.session_state.sel_balance = bal_idx[:2]
-            if not st.session_state.sel_cf:
-                st.session_state.sel_cf = cf_idx[:2]
+            st.session_state.sel_income  = [m for m in st.session_state.sel_income  if m in inc_idx] or inc_idx[:2]
+            st.session_state.sel_balance = [m for m in st.session_state.sel_balance if m in bal_idx] or bal_idx[:2]
+            st.session_state.sel_cf      = [m for m in st.session_state.sel_cf      if m in cf_idx]  or cf_idx[:2]
         except Exception as e:
             st.error(f"No se pudo cargar '{ticker}'. Detalle: {e}")
 
     if st.session_state.data is None:
-        st.info("Introduce un ticker y pulsa 'Buscar'.")
+        st.markdown(
+            "<div style='margin-top:40px;text-align:center;color:#6e6e73'>"
+            "Introduce un ticker y pulsa <b>Buscar</b> para comenzar."
+            "</div>",
+            unsafe_allow_html=True,
+        )
         return
+
     res_income, res_balance, res_cf = st.session_state.data
-
-    df_income = res_income["df_numeric"]
+    df_income     = res_income["df_numeric"]
     df_income_fmt = res_income["df_formatted"]
-    df_balance = res_balance["df_numeric"]
+    df_balance    = res_balance["df_numeric"]
     df_balance_fmt = res_balance["df_formatted"]
-    df_cf = res_cf["df_numeric"]
-    df_cf_fmt = res_cf["df_formatted"]
+    df_cf         = res_cf["df_numeric"]
+    df_cf_fmt     = res_cf["df_formatted"]
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Cuenta de resultados", "Balance", "Flujos de caja", "Valoración"])
+    # Nombre de la empresa si está disponible
+    ticker_label = st.session_state.last_ticker
+    try:
+        info = res_income.get("info") or {}
+        nombre = info.get("companyName") or info.get("longName") or ticker_label
+        precio_actual: Optional[float] = None
+        p = info.get("price") or info.get("currentPrice") or info.get("regularMarketPrice")
+        if p:
+            precio_actual = float(p)
+    except Exception:
+        nombre = ticker_label
+        precio_actual = None
+
+    st.markdown(
+        f"<h2 style='margin-bottom:4px'>{nombre} "
+        f"<span style='font-size:1rem;color:#6e6e73'>{ticker_label}</span></h2>",
+        unsafe_allow_html=True,
+    )
+    if precio_actual:
+        dark = st.session_state.theme == "dark"
+        acc = "#2997ff" if dark else "#0071e3"
+        st.markdown(
+            f"<p style='color:{acc};font-size:1.3rem;font-weight:600;margin-top:0'>"
+            f"${precio_actual:,.2f}</p>",
+            unsafe_allow_html=True,
+        )
+
+    # ── Tabs ──────────────────────────────────────
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["Cuenta de resultados", "Balance", "Flujos de caja", "Valoración"]
+    )
+
+    dark = st.session_state.theme == "dark"
+    hint_color = "#98989d"
+    sel_color  = "#2997ff" if dark else "#0071e3"
+
+    def _render_tab(df_num, df_fmt, sel_key, prefix, title):
+        st.session_state[sel_key] = _aggrid_table_click_any_cell(
+            df_fmt, st.session_state[sel_key], state_prefix=prefix,
+        )
+        metrics = st.session_state[sel_key]
+
+        # Hint debajo de la tabla
+        if metrics:
+            chips = "".join(
+                f"<span style='display:inline-block;background:{sel_color}22;"
+                f"color:{sel_color};border:1px solid {sel_color}44;"
+                f"border-radius:20px;padding:2px 12px;font-size:12px;"
+                f"font-weight:600;margin-right:6px'>{m}</span>"
+                for m in metrics
+            )
+            st.markdown(
+                f"<div style='margin-top:6px;margin-bottom:10px'>{chips}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"<div style='margin-top:6px;margin-bottom:10px;"
+                f"font-size:12px;color:{hint_color}'>"
+                "Toca una fila para añadirla a la gráfica · máx. 2</div>",
+                unsafe_allow_html=True,
+            )
+
+        if metrics:
+            fig = _plot_grouped_bars(df_num, metrics, title=title)
+            st.plotly_chart(fig, width="stretch")
 
     with tab1:
-        st.subheader("Tabla")
-        if AGGRID_OK:
-            st.session_state.sel_income = _aggrid_table_click_any_cell(
-                df_income_fmt,
-                st.session_state.sel_income,
-                state_prefix="income",
-            )
-        else:
-            st.session_state.sel_income = _clickable_table(
-                df_income_fmt,
-                st.session_state.sel_income,
-                state_prefix="income",
-            )
-        metrics = st.session_state.sel_income
-        if metrics:
-            fig = _plot_grouped_bars(df_income, metrics, title="Cuenta de resultados")
-            st.plotly_chart(fig, width="stretch")
+        _render_tab(df_income, df_income_fmt, "sel_income", "income", "Cuenta de resultados")
 
     with tab2:
-        st.subheader("Tabla")
-        if AGGRID_OK:
-            st.session_state.sel_balance = _aggrid_table_click_any_cell(
-                df_balance_fmt,
-                st.session_state.sel_balance,
-                state_prefix="balance",
-            )
-        else:
-            st.session_state.sel_balance = _clickable_table(
-                df_balance_fmt,
-                st.session_state.sel_balance,
-                state_prefix="balance",
-            )
-        metrics = st.session_state.sel_balance
-        if metrics:
-            fig = _plot_grouped_bars(df_balance, metrics, title="Balance")
-            st.plotly_chart(fig, width="stretch")
+        _render_tab(df_balance, df_balance_fmt, "sel_balance", "balance", "Balance")
 
     with tab3:
-        st.subheader("Tabla")
-        if AGGRID_OK:
-            st.session_state.sel_cf = _aggrid_table_click_any_cell(
-                df_cf_fmt,
-                st.session_state.sel_cf,
-                state_prefix="cf",
-            )
-        else:
-            st.session_state.sel_cf = _clickable_table(
-                df_cf_fmt,
-                st.session_state.sel_cf,
-                state_prefix="cf",
-            )
-        metrics = st.session_state.sel_cf
-        if metrics:
-            fig = _plot_grouped_bars(df_cf, metrics, title="Flujos de caja")
-            st.plotly_chart(fig, width="stretch")
+        _render_tab(df_cf, df_cf_fmt, "sel_cf", "cf", "Flujos de caja")
 
+    # ── Tab Valoración ────────────────────────────
     with tab4:
-        st.subheader("Valoración por PER (escenarios)")
-
-        # EPS actual: usamos el más reciente del backend
+        # EPS actual
         eps_series = res_income.get("eps_series")
-        eps_actual = None
+        eps_actual: Optional[float] = None
         try:
             if eps_series is not None and len(eps_series) > 0:
                 eps_actual = float(pd.Series(eps_series).sort_index(ascending=False).iloc[0])
         except Exception:
-            eps_actual = None
+            pass
 
-        # Gráfico: EPS (barras), PER (línea), Net Margin (línea) últimos 4 años
-        try:
-            years_all = list(df_income.columns)
-            years_4 = years_all[:4]
-        except Exception:
-            years_4 = []
+        years_all = list(df_income.columns)
+        years_4 = years_all[:4]
 
         eps_by_year: dict[str, float] = {}
         try:
             if eps_series is not None:
                 s = pd.Series(eps_series).sort_index(ascending=False).iloc[:4]
-                # s.index puede ser int/datetime; lo convertimos a YYYY
                 for idx, v in s.items():
                     y = str(getattr(idx, "year", None) or str(idx)[:4])[:4]
                     eps_by_year[y] = float(v)
         except Exception:
-            eps_by_year = {}
+            pass
 
-        eps_vals_4: List[float] = []
-        for y in years_4:
-            try:
-                eps_vals_4.append(float(eps_by_year.get(str(y), 0.0)))
-            except Exception:
-                eps_vals_4.append(0.0)
+        eps_vals_4 = [float(eps_by_year.get(str(y), 0.0)) for y in years_4]
 
-        # PER por año usando precio fin de año / EPS anual
-        per_vals_4: List[Optional[float]] = []
+        per_vals_4: List[Optional[float]] = [None] * len(years_4)
         if years_4 and eps_by_year:
-            per_vals_4 = per_last_4_years_from_eps(st.session_state.last_ticker, years_4, eps_by_year)
-        else:
-            per_vals_4 = [None] * len(years_4)
+            try:
+                per_vals_4 = per_last_4_years_from_eps(
+                    st.session_state.last_ticker, years_4, eps_by_year, api_key=fmp_key
+                )
+            except Exception:
+                pass
 
-        # Net margin (%)
-        net_margin_vals_4: List[Optional[float]] = []
+        net_margin_vals_4: List[Optional[float]] = [None] * len(years_4)
         try:
             if "Net Margin (%)" in df_income.index:
-                for y in years_4:
+                for i, y in enumerate(years_4):
                     v = df_income.loc["Net Margin (%)", y]
-                    net_margin_vals_4.append(None if pd.isna(v) else float(v))
-            else:
-                net_margin_vals_4 = [None] * len(years_4)
+                    net_margin_vals_4[i] = None if pd.isna(v) else float(v)
         except Exception:
-            net_margin_vals_4 = [None] * len(years_4)
+            pass
 
+        # ─ Gráfico EPS / PER / Margen
         if years_4:
+            dark = st.session_state.theme == "dark"
+            t = _chart_theme(dark)
+            bar_col   = "#2997ff" if dark else "#0071e3"
+            per_col   = "#ff9f0a" if dark else "#ff9500"
+
             fig_val = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_val.add_trace(
-                go.Bar(name="EPS", x=years_4, y=eps_vals_4, marker_color="#1f77b4"),
-                secondary_y=False,
-            )
-            fig_val.add_trace(
-                go.Scatter(
-                    name="PER",
-                    x=years_4,
-                    y=[p if p is not None else None for p in per_vals_4],
-                    mode="lines+markers",
-                    line=dict(color="#ff7f0e", width=2),
-                ),
-                secondary_y=True,
-            )
-            fig_val.add_trace(
-                go.Scatter(
-                    name="Margen neto (%)",
-                    x=years_4,
-                    y=[m if m is not None else None for m in net_margin_vals_4],
-                    mode="lines+markers",
-                    line=dict(color="#2ca02c", width=2, dash="dot"),
-                ),
-                secondary_y=True,
-            )
+            fig_val.add_trace(go.Bar(
+                name="EPS", x=years_4, y=eps_vals_4,
+                marker_color=bar_col, marker_line_width=0,
+            ), secondary_y=False)
+            fig_val.add_trace(go.Scatter(
+                name="PER", x=years_4,
+                y=[p if p is not None else None for p in per_vals_4],
+                mode="lines+markers", line=dict(color=per_col, width=2),
+                marker=dict(size=7),
+            ), secondary_y=True)
+            fig_val.add_trace(go.Scatter(
+                name="Margen neto (%)", x=years_4,
+                y=[m if m is not None else None for m in net_margin_vals_4],
+                mode="lines+markers", line=dict(color="#34c759", width=2, dash="dot"),
+                marker=dict(size=7),
+            ), secondary_y=True)
             fig_val.update_layout(
-                title="EPS, PER y margen neto (últimos 4 años)",
-                template="plotly_dark" if st.session_state.theme == "dark" else "plotly_white",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                title=dict(text="EPS, PER y margen neto — últimos 4 años",
+                           font=dict(size=15, color=t["font_col"], family="Inter, -apple-system")),
+                paper_bgcolor=t["paper_bg"], plot_bgcolor=t["paper_bg"],
+                font=dict(color=t["font_col"], family="Inter, -apple-system"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                            bgcolor="rgba(0,0,0,0)", font=dict(color=t["font_col"])),
                 margin=dict(l=40, r=20, t=60, b=40),
             )
-            fig_val.update_xaxes(title_text="Año")
-            fig_val.update_yaxes(title_text="EPS ($)", secondary_y=False)
-            fig_val.update_yaxes(title_text="PER / Margen (%)", secondary_y=True)
+            axis_style = dict(
+                title_font=dict(color=t["axis_col"]),
+                tickfont=dict(color=t["tick_col"]),
+                gridcolor=t["grid_col"],
+                linecolor=t["line_col"],
+            )
+            fig_val.update_xaxes(**axis_style)
+            fig_val.update_yaxes(title_text="EPS ($)", **axis_style, secondary_y=False)
+            fig_val.update_yaxes(title_text="PER / Margen (%)", **axis_style, secondary_y=True)
             st.plotly_chart(fig_val, width="stretch")
 
+        # ─ PER escenarios
+        st.markdown("### Valoración por PER — escenarios")
         if eps_actual is None:
-            st.warning("No se pudo obtener el EPS actual para la valoración por PER.")
+            st.warning("No se pudo obtener el EPS actual.")
         else:
             with st.form("per_form", clear_on_submit=False):
-                c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+                c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    tasa_desc = st.number_input("Tasa descuento (%)", min_value=0.0, max_value=50.0, value=10.0, step=0.5)
+                    tasa_desc = st.number_input("Tasa descuento (%)", 0.0, 50.0, 10.0, 0.5)
                 with c2:
-                    crec_cons = st.number_input("Crec. conservador (%)", min_value=-50.0, max_value=50.0, value=5.0, step=0.5)
-                    per_cons = st.number_input("PER conservador", min_value=0.0, max_value=100.0, value=15.0, step=1.0)
+                    crec_cons = st.number_input("Crecimiento conservador (%)", -50.0, 50.0, 5.0, 0.5)
+                    per_cons  = st.number_input("PER conservador", 0.0, 200.0, 15.0, 1.0)
                 with c3:
-                    crec_real = st.number_input("Crec. realista (%)", min_value=-50.0, max_value=50.0, value=10.0, step=0.5)
-                    per_real = st.number_input("PER realista", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+                    crec_real = st.number_input("Crecimiento realista (%)", -50.0, 50.0, 10.0, 0.5)
+                    per_real  = st.number_input("PER realista", 0.0, 200.0, 20.0, 1.0)
                 with c4:
-                    crec_opt = st.number_input("Crec. optimista (%)", min_value=-50.0, max_value=50.0, value=15.0, step=0.5)
-                    per_opt = st.number_input("PER optimista", min_value=0.0, max_value=100.0, value=25.0, step=1.0)
-
+                    crec_opt = st.number_input("Crecimiento optimista (%)", -50.0, 50.0, 15.0, 0.5)
+                    per_opt  = st.number_input("PER optimista", 0.0, 200.0, 25.0, 1.0)
                 calcular_per = st.form_submit_button("Calcular precios")
 
             if calcular_per:
                 r = tasa_desc / 100.0
                 v_cons = per_valuation_intrinsic_value(eps_actual, crec_cons / 100.0, per_cons, r)
                 v_real = per_valuation_intrinsic_value(eps_actual, crec_real / 100.0, per_real, r)
-                v_opt = per_valuation_intrinsic_value(eps_actual, crec_opt / 100.0, per_opt, r)
+                v_opt  = per_valuation_intrinsic_value(eps_actual, crec_opt  / 100.0, per_opt,  r)
 
-                # Precio actual (para colorear resultados)
-                price = None
-                try:
-                    info = res_income.get("info") or {}
-                    price = info.get("currentPrice") or info.get("regularMarketPrice")
-                    price = float(price) if price is not None else None
-                except Exception:
-                    price = None
+                price_for_color = precio_actual
+                if price_for_color is None:
+                    try:
+                        i = res_income.get("info") or {}
+                        p = i.get("currentPrice") or i.get("regularMarketPrice")
+                        price_for_color = float(p) if p else None
+                    except Exception:
+                        pass
 
-                def colored_value(label: str, v: float):
-                    if price is None:
-                        st.metric(label, f"${v:.2f}")
-                        return
-                    barato = price < v
-                    color = "#22c55e" if barato else "#ef4444"
-                    status = "barato" if barato else "caro"
-                    st.markdown(
-                        f"""
-<div style="line-height: 1.1;">
-  <div style="font-weight: 700; margin-bottom: 6px;">{label}</div>
-  <div>
-    <span style="color:{color}; font-size: 1.6rem; font-weight: 800;">${v:.2f}</span>
-    <span style="color:{color}; margin-left: 8px;">(vs ${price:.2f} → {status})</span>
-  </div>
-</div>
-""",
-                        unsafe_allow_html=True,
-                    )
-
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    colored_value("Conservador", v_cons)
-                with c2:
-                    colored_value("Realista", v_real)
-                with c3:
-                    colored_value("Optimista", v_opt)
+                html_vals = "".join([
+                    _colored_value_html("Conservador", v_cons, price_for_color),
+                    _colored_value_html("Realista",    v_real, price_for_color),
+                    _colored_value_html("Optimista",   v_opt,  price_for_color),
+                ])
+                st.markdown(
+                    f"<div style='display:flex;gap:40px;margin-top:12px'>{html_vals}</div>",
+                    unsafe_allow_html=True,
+                )
 
         st.divider()
-        st.subheader("Descuento de Dividendos (Gordon Growth)")
 
+        # ─ DDM
+        st.markdown("### Descuento de Dividendos — Gordon Growth")
         d0 = get_dividend_last_full_year_from_income_table(df_income)
         if d0 is None:
-            st.warning("No hay 'Dividendo Anual' suficiente para valorar por DDM.")
+            st.warning("No hay datos de dividendo suficientes para DDM.")
         else:
             fig_div = _dividend_growth_chart(df_income)
             if fig_div is not None:
                 st.plotly_chart(fig_div, width="stretch")
 
             with st.form("ddm_form", clear_on_submit=False):
-                c1, c2, c3 = st.columns([1, 1, 1])
+                c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.write(f"Dividendo anual base (D0): **${d0:.2f}**")
+                    st.markdown(
+                        f"<div style='margin-top:8px'><span style='font-size:0.8rem;color:#6e6e73;"
+                        f"text-transform:uppercase;letter-spacing:0.05em'>Dividendo base (D0)</span>"
+                        f"<br><span style='font-size:1.4rem;font-weight:700'>${d0:.2f}</span></div>",
+                        unsafe_allow_html=True,
+                    )
                 with c2:
-                    g = st.number_input("Crecimiento dividendo (%)", min_value=-50.0, max_value=50.0, value=5.0, step=0.5)
+                    g = st.number_input("Crecimiento dividendo (%)", -50.0, 50.0, 5.0, 0.5)
                 with c3:
-                    r = st.number_input("Tasa descuento DDM (%)", min_value=0.0, max_value=50.0, value=10.0, step=0.5)
+                    r_ddm = st.number_input("Tasa descuento (%)", 0.0, 50.0, 10.0, 0.5)
                 calcular_ddm = st.form_submit_button("Calcular DDM")
 
             if calcular_ddm:
-                if r <= g:
+                if r_ddm <= g:
                     st.error("La tasa de descuento debe ser mayor que el crecimiento esperado.")
                 else:
-                    valor = ddm_gordon_value(d0, g / 100.0, r / 100.0)
-                    # Precio actual (para verde/rojo)
-                    price = None
-                    try:
-                        info = res_income.get("info") or {}
-                        price = info.get("currentPrice") or info.get("regularMarketPrice")
-                        price = float(price) if price is not None else None
-                    except Exception:
-                        price = None
-
-                    if price is None:
-                        st.metric("Valor intrínseco (DDM)", f"${valor:.2f}")
-                    else:
-                        barato = price < valor
-                        color = "#22c55e" if barato else "#ef4444"
-                        status = "barato" if barato else "caro"
-                        st.markdown(
-                            f"""
-<div style="line-height: 1.1;">
-  <div style="font-weight: 700; margin-bottom: 6px;">Valor intrínseco (DDM)</div>
-  <div>
-    <span style="color:{color}; font-size: 1.6rem; font-weight: 800;">${valor:.2f}</span>
-    <span style="color:{color}; margin-left: 8px;">(vs ${price:.2f} → {status})</span>
-  </div>
-</div>
-""",
-                            unsafe_allow_html=True,
-                        )
+                    valor = ddm_gordon_value(d0, g / 100.0, r_ddm / 100.0)
+                    price_for_color = precio_actual
+                    if price_for_color is None:
+                        try:
+                            i = res_income.get("info") or {}
+                            p = i.get("currentPrice") or i.get("regularMarketPrice")
+                            price_for_color = float(p) if p else None
+                        except Exception:
+                            pass
+                    st.markdown(
+                        _colored_value_html("Valor intrínseco (DDM)", valor, price_for_color),
+                        unsafe_allow_html=True,
+                    )
 
 
 if __name__ == "__main__":
     main()
-

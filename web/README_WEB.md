@@ -10,6 +10,12 @@ Este folder contiene una versión desplegable en web de la app.
 
 Streamlit Community Cloud instala dependencias desde `web/requirements.txt` (prioridad sobre el `requirements.txt` de la raíz).
 
+## Secrets (FMP)
+
+Configura en Streamlit Cloud:
+
+- `FMP_API_KEY`: tu API key de Financial Modeling Prep
+
 ## Qué muestra
 
 - Tabs: `Cuenta de resultados`, `Balance`, `Flujos de caja`

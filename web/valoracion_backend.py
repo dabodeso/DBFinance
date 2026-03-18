@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-import yfinance as yf
+
+from fmp_client import (
+    FMPError,
+    balance_sheet,
+    cash_flow,
+    dividends as fmp_dividends,
+    get_api_key,
+    historical_price_eod_full,
+    income_statement,
+    profile as fmp_profile,
+    quote as fmp_quote,
+)
 
 
 def _year_from_col(col: Any) -> Optional[int]:
@@ -64,38 +74,53 @@ def format_shares_compact(val: Any) -> str:
     return f"{v:,.0f}"
 
 
-def extract_eps(income_stmt: pd.DataFrame, ticker_obj: yf.Ticker) -> Optional[pd.Series]:
-    posibles_nombres = [
-        "Diluted EPS",
-        "Basic EPS",
-        "Diluted Earnings Per Share",
-        "Basic Earnings Per Share",
-        "Earnings Per Share",
-        "EPS - Earnings Per Share",
-    ]
-    for nombre in posibles_nombres:
-        if nombre in income_stmt.index:
-            return income_stmt.loc[nombre].dropna()
-
-    # Fallback: earnings
+def _year_from_date_str(s: Any) -> Optional[str]:
     try:
-        earnings = ticker_obj.earnings
-        if earnings is not None and not earnings.empty and "Earnings" in earnings.columns:
-            return earnings["Earnings"].dropna()
+        return str(s)[:4]
     except Exception:
-        pass
+        return None
 
-    try:
-        earn = ticker_obj.get_earnings(freq="yearly")
-        if earn is not None and not earn.empty:
-            if "Earnings" in earn.columns:
-                return earn["Earnings"].dropna()
-            if len(earn.columns) > 0:
-                return earn.iloc[:, 0].dropna()
-    except Exception:
-        pass
 
-    return None
+def _records_to_year_df(records: List[Dict[str, Any]]) -> pd.DataFrame:
+    """
+    records: lista de dicts (cada dict es un periodo) con campos como date/calendarYear.
+    Devuelve DataFrame index=campos, columns=años (YYYY) en orden más reciente -> antiguo.
+    """
+    if not records:
+        return pd.DataFrame()
+    # ordenar por date desc si existe
+    def _key(rec):
+        return str(rec.get("date") or rec.get("calendarYear") or "")
+
+    recs = sorted(records, key=_key, reverse=True)
+    years: List[str] = []
+    for r in recs:
+        y = r.get("calendarYear") or _year_from_date_str(r.get("date"))
+        if y is None:
+            continue
+        years.append(str(y))
+    # construir tabla por keys numéricas
+    keys = set()
+    for r in recs:
+        keys.update(r.keys())
+    # eliminar metadatos
+    for k in ["symbol", "reportedCurrency", "cik", "fillingDate", "acceptedDate", "period", "link", "finalLink"]:
+        keys.discard(k)
+    # mantener date/calendarYear para no mezclarlos con métricas
+    keys.discard("date")
+    keys.discard("calendarYear")
+
+    data: Dict[str, List[Any]] = {}
+    for k in sorted(keys):
+        row: List[Any] = []
+        for r in recs:
+            row.append(r.get(k, pd.NA))
+        data[k] = row
+    df = pd.DataFrame(data, index=years).T
+    # columns: years in recs order (may repeat if missing); keep first 5 unique
+    # normalize duplicate columns by grouping first occurrence
+    df = df.loc[:, ~df.columns.duplicated()]
+    return df
 
 
 def _format_financials_table(
@@ -114,26 +139,38 @@ def _format_financials_table(
     return df_fmt
 
 
-def compute_dividendo_anual_alineado(ticker_obj: yf.Ticker, income_cols: List[Any]) -> Optional[pd.Series]:
+def compute_dividendo_anual_fmp(api_key: str, symbol: str) -> Optional[pd.Series]:
     try:
-        dividends = ticker_obj.dividends
-        if dividends is None or dividends.empty:
+        divs = fmp_dividends(symbol, api_key=api_key)
+        if not divs:
             return None
-        div_anual = dividends.groupby(dividends.index.year).sum()
-        if div_anual.empty:
+        df = pd.DataFrame(divs)
+        if "date" not in df.columns:
             return None
+        # algunos campos: dividend/adjDividend
+        amount_col = "dividend" if "dividend" in df.columns else ("adjDividend" if "adjDividend" in df.columns else None)
+        if amount_col is None:
+            return None
+        df["year"] = df["date"].astype(str).str.slice(0, 4)
+        df[amount_col] = pd.to_numeric(df[amount_col], errors="coerce")
+        anual = df.groupby("year")[amount_col].sum().sort_index(ascending=False)
+        # intentar excluir año actual si parece parcial: si estamos en ese año, quítalo
+        try:
+            from datetime import datetime
 
-        div_vals: List[Any] = []
-        for col in income_cols:
-            y = _year_from_col(col)
-            div_vals.append(div_anual.get(y, pd.NA))
-        return pd.Series(div_vals, index=income_cols)
+            cur = str(datetime.utcnow().year)
+            if cur in anual.index and len(anual.index) > 1:
+                anual = anual.drop(index=cur)
+        except Exception:
+            pass
+        return anual.iloc[:5]
     except Exception:
         return None
 
 
 def build_account_income_table(
     ticker: str,
+    api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Devuelve:
@@ -142,112 +179,52 @@ def build_account_income_table(
       - eps_series: serie de EPS (para valoración)
       - years: lista de columnas (string)
     """
-    ticker_obj = yf.Ticker(ticker)
-    info = ticker_obj.info  # puede estar vacío si el ticker no existe
-    if not info:
-        raise ValueError("Ticker no encontrado o sin datos.")
+    key = get_api_key(api_key)
+    inc_records = income_statement(ticker, api_key=key, limit=5, period="annual")
+    if not inc_records:
+        raise ValueError("No se encontraron estados financieros (income statement) en FMP.")
 
-    income_stmt = ticker_obj.income_stmt
-    if income_stmt is None or income_stmt.empty:
-        raise ValueError("No se encontraron estados financieros (income statement).")
+    inc_df = _records_to_year_df(inc_records)
+    if inc_df.empty:
+        raise ValueError("Income statement vacío.")
 
-    n_cols = len(income_stmt.columns)
-    if n_cols < 2:
-        raise ValueError("Datos insuficientes en income statement.")
-
-    income_stmt = income_stmt.iloc[:, : min(5, n_cols)]
-
-    eps_series = extract_eps(income_stmt, ticker_obj)
-    if eps_series is None or len(eps_series) < 2:
-        raise ValueError("EPS insuficiente para el análisis.")
-
-    metricas_income = {
-        "Total Revenue": ["Total Revenue", "Operating Revenue", "Revenue", "Gross Revenue"],
-        "Cost of Revenue": ["Cost of Revenue", "Cost Of Revenue", "Cost of Goods Sold"],
-        "Gross Profit": ["Gross Profit"],
-        "Total Expenses": ["Total Expenses"],
-        "Operating Expenses": ["Operating Expense", "Operating Expenses"],
-        "R&D": ["Research And Development", "Research And Development Expense"],
-        "SG&A": ["Selling General And Administration", "Selling And Marketing Expense"],
-        "Selling And Marketing": ["Selling And Marketing Expense", "Selling And Marketing"],
-        "General And Administrative": ["General And Administrative Expense", "General And Administrative"],
-        "Depreciation & Amortization": [
-            "Depreciation And Amortization",
-            "Depreciation & Amortization",
-            "Depreciation",
-        ],
-        "EBITDA": ["EBITDA", "Normalized EBITDA"],
-        "Operating Income": ["Operating Income"],
-        "EBIT": ["EBIT", "Operating Income", "Earnings Before Interest And Taxes"],
-        "Interest Expense": ["Interest Expense", "Net Interest Income"],
-        "Income Before Tax": ["Income Before Tax", "Pretax Income"],
-        "Income Tax Expense": ["Tax Provision", "Income Tax Expense", "Provision For Income Taxes"],
-        "Net Income": [
-            "Net Income",
-            "Net Income Common Stockholders",
-            "Net Income Including Noncontrolling Interests",
-        ],
-        "Basic EPS": ["Basic EPS", "Basic Earnings Per Share"],
-        "Diluted EPS": ["Diluted EPS", "Diluted Earnings Per Share"],
+    # map FMP keys -> etiquetas
+    keymap = {
+        "Total Revenue": ["revenue"],
+        "Cost of Revenue": ["costOfRevenue"],
+        "Gross Profit": ["grossProfit"],
+        "Total Expenses": ["totalExpenses"],
+        "Operating Expenses": ["operatingExpenses"],
+        "R&D": ["researchAndDevelopmentExpenses", "researchAndDevelopmentExpense"],
+        "SG&A": ["sellingGeneralAndAdministrativeExpenses"],
+        "Selling And Marketing": ["sellingAndMarketingExpenses"],
+        "General And Administrative": ["generalAndAdministrativeExpenses"],
+        "Depreciation & Amortization": ["depreciationAndAmortization"],
+        "EBITDA": ["ebitda"],
+        "Operating Income": ["operatingIncome"],
+        "EBIT": ["ebit"],
+        "Interest Expense": ["interestExpense"],
+        "Income Before Tax": ["incomeBeforeTax"],
+        "Income Tax Expense": ["incomeTaxExpense"],
+        "Net Income": ["netIncome"],
+        "Basic EPS": ["eps"],
+        "Diluted EPS": ["epsdiluted", "epsDiluted"],
+        "Shares Outstanding": ["weightedAverageShsOut", "weightedAverageShsOutDil"],
     }
 
     datos: Dict[str, pd.Series] = {}
-    for nombre_esp, posibles in metricas_income.items():
-        valor = None
-        for p in posibles:
-            if p in income_stmt.index:
-                valor = income_stmt.loc[p]
+    for label, keys in keymap.items():
+        for k in keys:
+            if k in inc_df.index:
+                datos[label] = inc_df.loc[k]
                 break
-        if valor is not None:
-            datos[nombre_esp] = valor
 
-    # Shares Outstanding desde balance_sheet
-    try:
-        bs = ticker_obj.balance_sheet
-        if bs is not None and not bs.empty:
-            metricas_shares = ["Share Issued", "Ordinary Shares Number", "Common Stock Shares Outstanding"]
-            for nombre in metricas_shares:
-                if nombre in bs.index:
-                    shares_series = bs.loc[nombre].dropna()
-                    if not shares_series.empty:
-                        shares_aligned = shares_series.reindex(income_stmt.columns)
-                        datos["Shares Outstanding"] = shares_aligned
-                        break
-    except Exception:
-        pass
-
-    # EBITDA fallback
-    try:
-        if "EBITDA" not in datos or (datos["EBITDA"].isna().all()):
-            for name in ["EBIT", "Operating Income", "Earnings Before Interest And Taxes"]:
-                if name in income_stmt.index:
-                    ebit = income_stmt.loc[name]
-                    break
-            else:
-                ebit = None
-
-            if ebit is not None:
-                cf = ticker_obj.cashflow
-                if cf is not None and not cf.empty:
-                    da_names = [
-                        "Depreciation And Amortization",
-                        "Depreciation & Amortization",
-                        "Depreciation",
-                    ]
-                    da = None
-                    for dn in da_names:
-                        if dn in cf.index:
-                            da = cf.loc[dn]
-                            break
-                    if da is not None:
-                        datos["EBITDA"] = ebit.add(da, fill_value=0)
-    except Exception:
-        pass
-
-    # Dividendo anual alineado con los años del income statement
-    div_anual = compute_dividendo_anual_alineado(ticker_obj, list(income_stmt.columns))
+    # Dividendo anual desde endpoint de dividendos (años completos)
+    div_anual = compute_dividendo_anual_fmp(key, ticker)
     if div_anual is not None and not div_anual.empty:
-        datos["Dividendo Anual"] = div_anual
+        # alinear a columnas del income (años)
+        aligned = div_anual.reindex(inc_df.columns)
+        datos["Dividendo Anual"] = aligned
 
     # Márgenes (%)
     try:
@@ -313,32 +290,42 @@ def build_account_income_table(
     df_numeric = df_numeric.loc[existentes + resto]
 
     # Compactar columnas a años (str "YYYY")
-    df_numeric.columns = [str(_year_from_col(c) or c)[:4] for c in df_numeric.columns]
+    df_numeric.columns = [str(c)[:4] for c in df_numeric.columns]
 
     df_formatted = _format_financials_table(df_numeric)
     years = list(df_numeric.columns)
 
+    # info: quote+profile
+    info: Dict[str, Any] = {}
+    try:
+        info.update(fmp_profile(ticker, api_key=key) or {})
+    except Exception:
+        pass
+    try:
+        q = fmp_quote(ticker, api_key=key) or {}
+        info["currentPrice"] = q.get("price") or q.get("previousClose") or q.get("open")
+    except Exception:
+        pass
+
     return {
         "df_numeric": df_numeric,
         "df_formatted": df_formatted,
-        "eps_series": eps_series,
+        # eps_series: reconstruida desde df_numeric si existe
+        "eps_series": df_numeric.loc["Diluted EPS"].dropna() if "Diluted EPS" in df_numeric.index else (df_numeric.loc["Basic EPS"].dropna() if "Basic EPS" in df_numeric.index else None),
         "years": years,
         "info": info,
+        "raw": {"income_statement": inc_records},
     }
 
 
-def build_balance_table(ticker: str) -> Dict[str, Any]:
-    ticker_obj = yf.Ticker(ticker)
-    info = ticker_obj.info
-    if not info:
-        raise ValueError("Ticker no encontrado o sin datos.")
-
-    bs = ticker_obj.balance_sheet
-    if bs is None or bs.empty:
-        raise ValueError("No se encontraron datos de balance (balance_sheet).")
-
-    n_cols = len(bs.columns)
-    bs = bs.iloc[:, : min(5, n_cols)]
+def build_balance_table(ticker: str, api_key: Optional[str] = None) -> Dict[str, Any]:
+    key = get_api_key(api_key)
+    bs_records = balance_sheet(ticker, api_key=key, limit=5, period="annual")
+    if not bs_records:
+        raise ValueError("No se encontraron datos de balance (FMP).")
+    bs_df = _records_to_year_df(bs_records)
+    if bs_df.empty:
+        raise ValueError("Balance vacío.")
 
     metricas_balance = {
         # Activos corrientes
@@ -380,17 +367,38 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
         "Total Equity": ["Total Stockholder Equity", "Total Equity"],
     }
 
+    # map FMP keys -> etiquetas
+    keymap = {
+        "Total Current Assets": ["totalCurrentAssets"],
+        "Cash And Cash Equivalents": ["cashAndCashEquivalents"],
+        "Short Term Investments": ["shortTermInvestments"],
+        "Accounts Receivable": ["netReceivables", "accountReceivables"],
+        "Inventory": ["inventory"],
+        "Other Current Assets": ["otherCurrentAssets"],
+        "Total Non Current Assets": ["totalNonCurrentAssets"],
+        "Property Plant Equipment": ["propertyPlantEquipmentNet"],
+        "Goodwill": ["goodwill"],
+        "Intangible Assets": ["intangibleAssets"],
+        "Long Term Investments": ["longTermInvestments"],
+        "Other Non Current Assets": ["otherNonCurrentAssets"],
+        "Total Assets": ["totalAssets"],
+        "Total Current Liabilities": ["totalCurrentLiabilities"],
+        "Accounts Payable": ["accountPayables"],
+        "Short Term Debt": ["shortTermDebt"],
+        "Other Current Liabilities": ["otherCurrentLiabilities"],
+        "Total Non Current Liabilities": ["totalNonCurrentLiabilities"],
+        "Long Term Debt": ["longTermDebt"],
+        "Other Non Current Liabilities": ["otherNonCurrentLiabilities"],
+        "Total Liabilities": ["totalLiabilities"],
+        "Total Equity": ["totalStockholdersEquity", "totalEquity"],
+    }
+
     datos: Dict[str, pd.Series] = {}
-    for nombre_esp, posibles in metricas_balance.items():
-        if not posibles:
-            continue
-        valor = None
-        for p in posibles:
-            if p in bs.index:
-                valor = bs.loc[p]
+    for label, keys in keymap.items():
+        for k in keys:
+            if k in bs_df.index:
+                datos[label] = bs_df.loc[k]
                 break
-        if valor is not None:
-            datos[nombre_esp] = valor
 
     # Total Debt = Short Term Debt + Long Term Debt cuando existan
     try:
@@ -405,7 +413,7 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
         raise ValueError("No se encontraron métricas de balance.")
 
     df_numeric = pd.DataFrame(datos).T
-    df_numeric.columns = [str(_year_from_col(c) or c)[:4] for c in df_numeric.columns]
+    df_numeric.columns = [str(c)[:4] for c in df_numeric.columns]
 
     df_formatted = df_numeric.astype(object).copy()
     for idx in df_formatted.index:
@@ -442,26 +450,34 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
     df_numeric = df_numeric.loc[existentes + resto]
     df_formatted = df_formatted.loc[existentes + resto]
 
+    info: Dict[str, Any] = {}
+    try:
+        info.update(fmp_profile(ticker, api_key=key) or {})
+    except Exception:
+        pass
+    try:
+        q = fmp_quote(ticker, api_key=key) or {}
+        info["currentPrice"] = q.get("price") or q.get("previousClose") or q.get("open")
+    except Exception:
+        pass
+
     return {
         "df_numeric": df_numeric,
         "df_formatted": df_formatted,
         "years": list(df_numeric.columns),
         "info": info,
+        "raw": {"balance_sheet": bs_records},
     }
 
 
-def build_cashflow_table(ticker: str) -> Dict[str, Any]:
-    ticker_obj = yf.Ticker(ticker)
-    info = ticker_obj.info
-    if not info:
-        raise ValueError("Ticker no encontrado o sin datos.")
-
-    cf = ticker_obj.cashflow
-    if cf is None or cf.empty:
-        raise ValueError("No se encontraron datos de cashflow (cashflow).")
-
-    n_cols = len(cf.columns)
-    cf = cf.iloc[:, : min(5, n_cols)]
+def build_cashflow_table(ticker: str, api_key: Optional[str] = None) -> Dict[str, Any]:
+    key = get_api_key(api_key)
+    cf_records = cash_flow(ticker, api_key=key, limit=5, period="annual")
+    if not cf_records:
+        raise ValueError("No se encontraron datos de cashflow (FMP).")
+    cf_df = _records_to_year_df(cf_records)
+    if cf_df.empty:
+        raise ValueError("Cashflow vacío.")
 
     metricas_cf = {
         # Operaciones
@@ -533,21 +549,38 @@ def build_cashflow_table(ticker: str) -> Dict[str, Any]:
         "Net Income (Cashflow)": ["Net Income"],
     }
 
+    keymap = {
+        "Cash From Operating Activities": ["operatingCashFlow"],
+        "Depreciation & Amortization (CF)": ["depreciationAndAmortization"],
+        "Change in Working Capital": ["changeInWorkingCapital"],
+        "Capital Expenditures": ["capitalExpenditure"],
+        "Investments": ["purchasesOfInvestments", "salesMaturitiesOfInvestments"],
+        "Acquisitions": ["acquisitionsNet"],
+        "Other Investing Cash Flow": ["otherInvestingActivites"],
+        "Interest Paid": ["interestPaid"],
+        "Dividends Paid": ["dividendsPaid"],
+        "Share Repurchases": ["commonStockRepurchased"],
+        "Share Issuance": ["commonStockIssued"],
+        "Debt Issuance": ["debtIssuance"],
+        "Debt Repayment": ["debtRepayment"],
+        "Net Borrowings": ["netBorrowings"],
+        "Other Financing Cash Flow": ["otherFinancingActivites"],
+        "Free Cash Flow": ["freeCashFlow"],
+        "Net Income (Cashflow)": ["netIncome"],
+    }
+
     datos: Dict[str, pd.Series] = {}
-    for nombre_esp, posibles in metricas_cf.items():
-        valor = None
-        for p in posibles:
-            if p in cf.index:
-                valor = cf.loc[p]
+    for label, keys in keymap.items():
+        for k in keys:
+            if k in cf_df.index:
+                datos[label] = cf_df.loc[k]
                 break
-        if valor is not None:
-            datos[nombre_esp] = valor
 
     if not datos:
         raise ValueError("No se encontraron métricas de cashflow.")
 
     df_numeric = pd.DataFrame(datos).T
-    df_numeric.columns = [str(_year_from_col(c) or c)[:4] for c in df_numeric.columns]
+    df_numeric.columns = [str(c)[:4] for c in df_numeric.columns]
 
     df_formatted = df_numeric.astype(object).copy()
     for idx in df_formatted.index:
@@ -578,11 +611,23 @@ def build_cashflow_table(ticker: str) -> Dict[str, Any]:
     df_numeric = df_numeric.loc[existentes + resto]
     df_formatted = df_formatted.loc[existentes + resto]
 
+    info: Dict[str, Any] = {}
+    try:
+        info.update(fmp_profile(ticker, api_key=key) or {})
+    except Exception:
+        pass
+    try:
+        q = fmp_quote(ticker, api_key=key) or {}
+        info["currentPrice"] = q.get("price") or q.get("previousClose") or q.get("open")
+    except Exception:
+        pass
+
     return {
         "df_numeric": df_numeric,
         "df_formatted": df_formatted,
         "years": list(df_numeric.columns),
         "info": info,
+        "raw": {"cash_flow": cf_records},
     }
 
 
@@ -655,6 +700,7 @@ def per_last_4_years_from_eps(
     ticker: str,
     years: List[str],
     eps_by_year: Dict[str, float],
+    api_key: Optional[str] = None,
 ) -> List[Optional[float]]:
     """
     Calcula PER por año usando:
@@ -663,9 +709,10 @@ def per_last_4_years_from_eps(
     eps_by_year: dict { "YYYY": eps_float }
     """
     per_vals: List[Optional[float]] = []
+    key = get_api_key(api_key)
+    hist = None
     try:
-        t = yf.Ticker(ticker)
-        hist = t.history(period="6y", interval="1d")
+        hist = historical_price_eod_full(ticker, api_key=key)
     except Exception:
         hist = None
 
@@ -677,20 +724,23 @@ def per_last_4_years_from_eps(
                 per_vals.append(None)
                 continue
 
-            if hist is None or hist.empty:
+            # hist puede ser dict con campo histórico; intentamos formatos comunes
+            close = None
+            if isinstance(hist, dict):
+                series = hist.get("historical") or hist.get("historicalStockList") or hist.get("data")
+                if isinstance(series, list):
+                    # buscar último día de diciembre o del año
+                    dec = [d for d in series if str(d.get("date", "")).startswith(f"{year_int}-12")]
+                    cand = dec if dec else [d for d in series if str(d.get("date", "")).startswith(f"{year_int}-")]
+                    if cand:
+                        # asume que vienen ordenados desc; si no, ordenamos
+                        cand = sorted(cand, key=lambda d: str(d.get("date", "")), reverse=True)
+                        close = cand[0].get("close")
+            if close is None:
                 per_vals.append(None)
                 continue
 
-            # Preferir el último cierre de diciembre
-            mask = (hist.index >= f"{year_int}-12-01") & (hist.index <= f"{year_int}-12-31")
-            subset = hist.loc[mask]
-            if subset.empty:
-                subset = hist.loc[hist.index.year == year_int]
-            if subset.empty:
-                per_vals.append(None)
-                continue
-
-            close = float(subset["Close"].iloc[-1])
+            close = float(close)
             per_vals.append(close / eps_y)
         except Exception:
             per_vals.append(None)
