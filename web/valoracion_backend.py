@@ -165,13 +165,23 @@ def build_account_income_table(
         "Total Revenue": ["Total Revenue", "Operating Revenue", "Revenue", "Gross Revenue"],
         "Cost of Revenue": ["Cost of Revenue", "Cost Of Revenue", "Cost of Goods Sold"],
         "Gross Profit": ["Gross Profit"],
+        "Total Expenses": ["Total Expenses"],
         "Operating Expenses": ["Operating Expense", "Operating Expenses"],
         "R&D": ["Research And Development", "Research And Development Expense"],
         "SG&A": ["Selling General And Administration", "Selling And Marketing Expense"],
+        "Selling And Marketing": ["Selling And Marketing Expense", "Selling And Marketing"],
+        "General And Administrative": ["General And Administrative Expense", "General And Administrative"],
+        "Depreciation & Amortization": [
+            "Depreciation And Amortization",
+            "Depreciation & Amortization",
+            "Depreciation",
+        ],
         "EBITDA": ["EBITDA", "Normalized EBITDA"],
+        "Operating Income": ["Operating Income"],
         "EBIT": ["EBIT", "Operating Income", "Earnings Before Interest And Taxes"],
         "Interest Expense": ["Interest Expense", "Net Interest Income"],
         "Income Before Tax": ["Income Before Tax", "Pretax Income"],
+        "Income Tax Expense": ["Tax Provision", "Income Tax Expense", "Provision For Income Taxes"],
         "Net Income": [
             "Net Income",
             "Net Income Common Stockholders",
@@ -256,6 +266,16 @@ def build_account_income_table(
     except Exception:
         pass
 
+    # Ratios adicionales
+    try:
+        if "Income Tax Expense" in datos and "Income Before Tax" in datos:
+            tax = datos["Income Tax Expense"].astype(float)
+            pretax = datos["Income Before Tax"].astype(float)
+            eps = 1e-9
+            datos["Effective Tax Rate (%)"] = (tax / (pretax.replace(0, eps))) * 100
+    except Exception:
+        pass
+
     if not datos:
         raise ValueError("No se encontraron métricas para la cuenta de resultados.")
 
@@ -266,14 +286,21 @@ def build_account_income_table(
         "Cost of Revenue",
         "Gross Profit",
         "Gross Margin (%)",
+        "Total Expenses",
         "Operating Expenses",
         "R&D",
         "SG&A",
+        "Selling And Marketing",
+        "General And Administrative",
+        "Depreciation & Amortization",
         "EBITDA",
+        "Operating Income",
         "EBIT",
         "Operating Margin (%)",
         "Interest Expense",
         "Income Before Tax",
+        "Income Tax Expense",
+        "Effective Tax Rate (%)",
         "Net Income",
         "Net Margin (%)",
         "Basic EPS",
@@ -326,6 +353,7 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
         "Inventory": ["Inventory"],
         "Other Current Assets": ["Other Current Assets"],
         # Activos no corrientes
+        "Total Non Current Assets": ["Total Non Current Assets"],
         "Property Plant Equipment": [
             "Property Plant Equipment",
             "Net Property Plant And Equipment",
@@ -343,6 +371,7 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
         "Short Term Debt": ["Short Long Term Debt", "Short Term Debt"],
         "Other Current Liabilities": ["Other Current Liabilities"],
         # Pasivos no corrientes
+        "Total Non Current Liabilities": ["Total Non Current Liabilities"],
         "Long Term Debt": ["Long Term Debt", "Long Term Debt And Capital Lease Obligation"],
         "Other Non Current Liabilities": ["Other Non Current Liabilities"],
         # Totales pasivo y equity
@@ -390,6 +419,7 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
         "Accounts Receivable",
         "Inventory",
         "Other Current Assets",
+        "Total Non Current Assets",
         "Property Plant Equipment",
         "Goodwill",
         "Intangible Assets",
@@ -400,6 +430,7 @@ def build_balance_table(ticker: str) -> Dict[str, Any]:
         "Accounts Payable",
         "Short Term Debt",
         "Other Current Liabilities",
+        "Total Non Current Liabilities",
         "Long Term Debt",
         "Other Non Current Liabilities",
         "Total Liabilities",
@@ -442,10 +473,19 @@ def build_cashflow_table(ticker: str) -> Dict[str, Any]:
             "Depreciation",
             "Depreciation And Amortization",
         ],
+        "Change in Working Capital": [
+            "Change In Working Capital",
+            "Change in Working Capital",
+        ],
         # Inversión
         "Capital Expenditures": [
             "Capital Expenditures",
             "Capital Expenditure",
+        ],
+        "Investments": [
+            "Investments",
+            "Purchase Of Investments",
+            "Sale Of Investments",
         ],
         "Acquisitions": [
             "Acquisitions Net",
@@ -471,6 +511,14 @@ def build_cashflow_table(ticker: str) -> Dict[str, Any]:
         "Share Issuance": [
             "Issuance Of Stock",
             "Proceeds From Issuance Of Common Stock",
+        ],
+        "Debt Issuance": [
+            "Proceeds From Issuance Of Debt",
+            "Issuance Of Debt",
+        ],
+        "Debt Repayment": [
+            "Repayment Of Debt",
+            "Repayment Of Long Term Debt",
         ],
         "Net Borrowings": [
             "Net Borrowings",
@@ -509,13 +557,17 @@ def build_cashflow_table(ticker: str) -> Dict[str, Any]:
     orden_cf = [
         "Cash From Operating Activities",
         "Depreciation & Amortization (CF)",
+        "Change in Working Capital",
         "Capital Expenditures",
+        "Investments",
         "Acquisitions",
         "Other Investing Cash Flow",
         "Interest Paid",
         "Dividends Paid",
         "Share Repurchases",
         "Share Issuance",
+        "Debt Issuance",
+        "Debt Repayment",
         "Net Borrowings",
         "Other Financing Cash Flow",
         "Free Cash Flow",
@@ -532,4 +584,117 @@ def build_cashflow_table(ticker: str) -> Dict[str, Any]:
         "years": list(df_numeric.columns),
         "info": info,
     }
+
+
+def eps_growth_cagr(eps_series: pd.Series, years: int) -> Optional[float]:
+    """
+    CAGR de EPS en % para un número de años, usando la serie (cualquier orden).
+    Devuelve porcentaje (ej. 12.3), o None si no hay datos suficientes.
+    """
+    if eps_series is None or len(eps_series) < years + 1:
+        return None
+    eps_sorted = eps_series.sort_index(ascending=False)
+    vals = eps_sorted.values.astype(float)
+    if len(vals) < years + 1:
+        return None
+    if vals[years] == 0:
+        return None
+    try:
+        return ((vals[0] / vals[years]) ** (1 / years) - 1) * 100
+    except Exception:
+        return None
+
+
+def per_valuation_intrinsic_value(
+    eps_actual: float,
+    crecimiento_anual: float,
+    per_futuro: float,
+    tasa_descuento: float,
+    years: int = 5,
+) -> float:
+    """
+    Valoración por PER proyectando EPS 'years' años y descontando el precio futuro.
+    crecimiento_anual y tasa_descuento en formato decimal (ej 0.10).
+    """
+    eps_futuro = eps_actual * ((1 + crecimiento_anual) ** years)
+    precio_futuro = eps_futuro * per_futuro
+    valor_presente = precio_futuro / ((1 + tasa_descuento) ** years)
+    return float(valor_presente)
+
+
+def ddm_gordon_value(dividendo_anual: float, crecimiento: float, tasa_descuento: float) -> float:
+    """
+    Gordon Growth Model (DDM):
+      valor = D1 / (r - g), donde D1 = D0 * (1+g)
+    crecimiento y tasa_descuento en formato decimal (ej 0.05).
+    """
+    d1 = float(dividendo_anual) * (1 + crecimiento)
+    return float(d1 / (tasa_descuento - crecimiento))
+
+
+def get_dividend_last_full_year_from_income_table(df_income_numeric: pd.DataFrame) -> Optional[float]:
+    """
+    Usa la fila 'Dividendo Anual' del income table (años completos) y devuelve el
+    más reciente disponible (columna más a la izquierda / primer valor no N/A).
+    """
+    if df_income_numeric is None or df_income_numeric.empty:
+        return None
+    if "Dividendo Anual" not in df_income_numeric.index:
+        return None
+    try:
+        serie = df_income_numeric.loc["Dividendo Anual"].dropna()
+        if serie.empty:
+            return None
+        # columnas están como strings "YYYY" ya, orden más reciente primero (por construcción)
+        return float(serie.iloc[0])
+    except Exception:
+        return None
+
+
+def per_last_4_years_from_eps(
+    ticker: str,
+    years: List[str],
+    eps_by_year: Dict[str, float],
+) -> List[Optional[float]]:
+    """
+    Calcula PER por año usando:
+      PER_y = Close(fin de año) / EPS_y
+    years: lista de años (string) en el orden deseado para el gráfico (idealmente más reciente -> más antiguo)
+    eps_by_year: dict { "YYYY": eps_float }
+    """
+    per_vals: List[Optional[float]] = []
+    try:
+        t = yf.Ticker(ticker)
+        hist = t.history(period="6y", interval="1d")
+    except Exception:
+        hist = None
+
+    for y in years:
+        try:
+            year_int = int(str(y)[:4])
+            eps_y = float(eps_by_year.get(str(year_int), float("nan")))
+            if eps_y == 0 or pd.isna(eps_y):
+                per_vals.append(None)
+                continue
+
+            if hist is None or hist.empty:
+                per_vals.append(None)
+                continue
+
+            # Preferir el último cierre de diciembre
+            mask = (hist.index >= f"{year_int}-12-01") & (hist.index <= f"{year_int}-12-31")
+            subset = hist.loc[mask]
+            if subset.empty:
+                subset = hist.loc[hist.index.year == year_int]
+            if subset.empty:
+                per_vals.append(None)
+                continue
+
+            close = float(subset["Close"].iloc[-1])
+            per_vals.append(close / eps_y)
+        except Exception:
+            per_vals.append(None)
+
+    return per_vals
+
 
